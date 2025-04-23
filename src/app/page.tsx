@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from "@clerk/nextjs";
-import { SignIn, SignUp } from "@clerk/nextjs";
+import { SignIn } from "@clerk/nextjs";
 import ReminderApp from '../components/ReminderApp';
 
 export default function Home() {
@@ -19,11 +19,8 @@ export default function Home() {
     return (
       <main className="min-h-screen p-4 bg-gray-100">
         <div className="max-w-md mx-auto">
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-            <SignIn />
-          </div>
           <div className="bg-white rounded-lg shadow-lg p-6">
-            <SignUp />
+            <SignIn />
           </div>
         </div>
       </main>
