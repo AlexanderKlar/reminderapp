@@ -20,7 +20,7 @@ export default function Home() {
       <main className="min-h-screen p-4 bg-gray-100">
         <div className="max-w-md mx-auto">
           <div className="bg-white rounded-lg shadow-lg p-6">
-            <SignIn />
+            <SignIn afterSignInUrl="/" />
           </div>
         </div>
       </main>
