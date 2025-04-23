@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useClerk, useAuth } from "@clerk/nextjs";
 
 const ReminderApp = () => {
+  const { signOut } = useClerk();
+  const { userId } = useAuth();
   const [reminders, setReminders] = useState([]);
   const [newReminder, setNewReminder] = useState({
     recipient: '',
@@ -12,16 +15,16 @@ const ReminderApp = () => {
 
   // Load reminders from localStorage on component mount
   useEffect(() => {
-    const savedReminders = localStorage.getItem('reminders');
+    const savedReminders = localStorage.getItem(`reminders_${userId}`);
     if (savedReminders) {
       setReminders(JSON.parse(savedReminders));
     }
-  }, []);
+  }, [userId]);
 
   // Save reminders to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem('reminders', JSON.stringify(reminders));
-  }, [reminders]);
+    localStorage.setItem(`reminders_${userId}`, JSON.stringify(reminders));
+  }, [reminders, userId]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -76,7 +79,15 @@ const ReminderApp = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-4">
-      <h1 className="text-3xl font-bold text-center mb-6">Reminder App</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Reminder App</h1>
+        <button
+          onClick={() => signOut()}
+          className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+        >
+          Sign Out
+        </button>
+      </div>
       
       {/* Tabs */}
       <div className="flex mb-6 border-b">
