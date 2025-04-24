@@ -4,6 +4,12 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
+console.log('Twilio Config:', {
+  accountSid: accountSid ? `${accountSid.substring(0, 5)}...` : 'undefined',
+  authToken: authToken ? '***' : 'undefined',
+  twilioPhoneNumber: twilioPhoneNumber || 'undefined'
+});
+
 // Initialize the client with proper authentication
 const client = twilio(authToken, undefined, {
   accountSid: accountSid
