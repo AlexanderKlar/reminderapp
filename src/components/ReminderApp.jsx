@@ -64,74 +64,42 @@ const ReminderApp = () => {
   // Check for reminders that need to be sent
   useEffect(() => {
     const checkReminders = async () => {
-      const now = new Date();
-      for (const reminder of reminders) {
-        const reminderTime = new Date(reminder.scheduled_time);
-        if (reminderTime <= now && reminder.status === 'scheduled') {
-          try {
-            const response = await fetch('/api/send-sms', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                to: reminder.phone_number,
-                message: reminder.message,
-              }),
-            });
+      try {
+        const response = await fetch('/api/check-reminders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId }),
+        });
 
-            const result = await response.json();
-            
-            if (result.success) {
-              // Update reminder status in Supabase
-              const { error } = await supabase
-                .from('reminders')
-                .update({ 
-                  status: 'sent',
-                  message_id: result.messageId,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', reminder.id);
+        const result = await response.json();
+        
+        if (result.success) {
+          // Refresh reminders list
+          const { data, error } = await supabase
+            .from('reminders')
+            .select('*')
+            .eq('user_id', userId)
+            .order('scheduled_time', { ascending: true });
 
-              if (error) throw error;
-
-              // Update local state
-              setReminders(prevReminders =>
-                prevReminders.map(r =>
-                  r.id === reminder.id
-                    ? { ...r, status: 'sent', message_id: result.messageId }
-                    : r
-                )
-              );
-
-              setNotification({
-                open: true,
-                message: `Reminder sent to ${reminder.recipient}`,
-                severity: 'success',
-              });
-            } else {
-              setNotification({
-                open: true,
-                message: `Failed to send reminder to ${reminder.recipient}`,
-                severity: 'error',
-              });
-            }
-          } catch (error) {
-            console.error('Error sending reminder:', error);
-            setNotification({
-              open: true,
-              message: `Error sending reminder to ${reminder.recipient}`,
-              severity: 'error',
-            });
-          }
+          if (error) throw error;
+          setReminders(data || []);
         }
+      } catch (error) {
+        console.error('Error checking reminders:', error);
+        setNotification({
+          open: true,
+          message: 'Error checking reminders',
+          severity: 'error',
+        });
       }
     };
 
     // Check every minute
     const interval = setInterval(checkReminders, 60000);
     return () => clearInterval(interval);
-  }, [reminders]);
+  }, [userId]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
