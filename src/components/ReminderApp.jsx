@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useClerk, useAuth } from "@clerk/nextjs";
+import { supabase } from '@/utils/supabase';
 import {
   Container,
   Paper,
@@ -15,6 +16,8 @@ import {
   IconButton,
   Divider,
   Stack,
+  Alert,
+  Snackbar,
 } from '@mui/material';
 import { Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 
@@ -29,19 +32,106 @@ const ReminderApp = () => {
     dateTime: '',
   });
   const [activeTab, setActiveTab] = useState(0);
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
-  // Load reminders from localStorage on component mount
+  // Load reminders from Supabase on component mount
   useEffect(() => {
-    const savedReminders = localStorage.getItem(`reminders_${userId}`);
-    if (savedReminders) {
-      setReminders(JSON.parse(savedReminders));
+    const loadReminders = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('reminders')
+          .select('*')
+          .eq('user_id', userId)
+          .order('scheduled_time', { ascending: true });
+
+        if (error) throw error;
+        setReminders(data || []);
+      } catch (error) {
+        console.error('Error loading reminders:', error);
+        setNotification({
+          open: true,
+          message: 'Error loading reminders',
+          severity: 'error',
+        });
+      }
+    };
+
+    if (userId) {
+      loadReminders();
     }
   }, [userId]);
 
-  // Save reminders to localStorage whenever they change
+  // Check for reminders that need to be sent
   useEffect(() => {
-    localStorage.setItem(`reminders_${userId}`, JSON.stringify(reminders));
-  }, [reminders, userId]);
+    const checkReminders = async () => {
+      const now = new Date();
+      for (const reminder of reminders) {
+        const reminderTime = new Date(reminder.scheduled_time);
+        if (reminderTime <= now && reminder.status === 'scheduled') {
+          try {
+            const response = await fetch('/api/send-sms', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                to: reminder.phone_number,
+                message: reminder.message,
+              }),
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+              // Update reminder status in Supabase
+              const { error } = await supabase
+                .from('reminders')
+                .update({ 
+                  status: 'sent',
+                  message_id: result.messageId,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', reminder.id);
+
+              if (error) throw error;
+
+              // Update local state
+              setReminders(prevReminders =>
+                prevReminders.map(r =>
+                  r.id === reminder.id
+                    ? { ...r, status: 'sent', message_id: result.messageId }
+                    : r
+                )
+              );
+
+              setNotification({
+                open: true,
+                message: `Reminder sent to ${reminder.recipient}`,
+                severity: 'success',
+              });
+            } else {
+              setNotification({
+                open: true,
+                message: `Failed to send reminder to ${reminder.recipient}`,
+                severity: 'error',
+              });
+            }
+          } catch (error) {
+            console.error('Error sending reminder:', error);
+            setNotification({
+              open: true,
+              message: `Error sending reminder to ${reminder.recipient}`,
+              severity: 'error',
+            });
+          }
+        }
+      }
+    };
+
+    // Check every minute
+    const interval = setInterval(checkReminders, 60000);
+    return () => clearInterval(interval);
+  }, [reminders]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -51,43 +141,99 @@ const ReminderApp = () => {
     });
   };
 
-  const scheduleReminder = () => {
+  const scheduleReminder = async () => {
     // Validate form
     if (!newReminder.recipient || !newReminder.phoneNumber || !newReminder.message || !newReminder.dateTime) {
-      alert('Please fill in all fields');
+      setNotification({
+        open: true,
+        message: 'Please fill in all fields',
+        severity: 'error',
+      });
       return;
     }
 
-    // Create a new reminder with a unique ID
-    const reminder = {
-      ...newReminder,
-      id: Date.now().toString(),
-      status: 'scheduled'
-    };
+    try {
+      // Insert new reminder into Supabase
+      const { data, error } = await supabase
+        .from('reminders')
+        .insert([
+          {
+            user_id: userId,
+            recipient: newReminder.recipient,
+            phone_number: newReminder.phoneNumber,
+            message: newReminder.message,
+            scheduled_time: newReminder.dateTime,
+            status: 'scheduled'
+          }
+        ])
+        .select();
 
-    // Add to reminders list
-    setReminders([...reminders, reminder]);
+      if (error) throw error;
 
-    // Reset form
-    setNewReminder({
-      recipient: '',
-      phoneNumber: '',
-      message: '',
-      dateTime: '',
-    });
+      // Add to local state
+      setReminders([...reminders, data[0]]);
 
-    // Switch to view tab
-    setActiveTab(1);
+      // Reset form
+      setNewReminder({
+        recipient: '',
+        phoneNumber: '',
+        message: '',
+        dateTime: '',
+      });
+
+      // Switch to view tab
+      setActiveTab(1);
+
+      setNotification({
+        open: true,
+        message: 'Reminder scheduled successfully',
+        severity: 'success',
+      });
+    } catch (error) {
+      console.error('Error scheduling reminder:', error);
+      setNotification({
+        open: true,
+        message: 'Error scheduling reminder',
+        severity: 'error',
+      });
+    }
   };
 
-  const deleteReminder = (id) => {
-    setReminders(reminders.filter(reminder => reminder.id !== id));
+  const deleteReminder = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('reminders')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Update local state
+      setReminders(reminders.filter(reminder => reminder.id !== id));
+      
+      setNotification({
+        open: true,
+        message: 'Reminder deleted successfully',
+        severity: 'success',
+      });
+    } catch (error) {
+      console.error('Error deleting reminder:', error);
+      setNotification({
+        open: true,
+        message: 'Error deleting reminder',
+        severity: 'error',
+      });
+    }
   };
 
   // Format the date for display
   const formatDateTime = (dateTimeStr) => {
     const dt = new Date(dateTimeStr);
     return dt.toLocaleString();
+  };
+
+  const handleCloseNotification = () => {
+    setNotification({ ...notification, open: false });
   };
 
   return (
@@ -191,13 +337,16 @@ const ReminderApp = () => {
                     {reminder.recipient}
                   </Typography>
                   <Typography color="text.secondary" gutterBottom>
-                    {reminder.phoneNumber}
+                    {reminder.phone_number}
                   </Typography>
                   <Typography variant="body1" sx={{ mt: 1 }}>
                     {reminder.message}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                    {formatDateTime(reminder.dateTime)}
+                    Scheduled for: {formatDateTime(reminder.scheduled_time)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                    Status: {reminder.status}
                   </Typography>
                 </CardContent>
                 <Divider />
@@ -216,6 +365,21 @@ const ReminderApp = () => {
           )}
         </Stack>
       )}
+
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={handleCloseNotification}
+          severity={notification.severity}
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 };
